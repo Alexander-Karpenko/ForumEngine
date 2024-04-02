@@ -5,6 +5,7 @@ import com.AtomIDTest.ForumEngine.models.Topic;
 import com.AtomIDTest.ForumEngine.repositories.TopicsRepository;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -35,6 +36,9 @@ public class TopicsService {
 
     public List<Topic> findAll(){
         return topicsRepository.findAll();
+    }
+    public List<Topic> findAll(int pageNum, int size){
+        return topicsRepository.findAll(PageRequest.of(pageNum, size)).getContent();
     }
 
     public Optional<Topic> findById(UUID id){

@@ -24,13 +24,15 @@ public class MessageController {
     private final TopicsService topicsService;
     private final UUIDValidator uuidValidator;
     private final MessageDTOValidator messageDTOValidator;
+    private final MessagePaginator messagePaginator;
 
         @Autowired
-    public MessageController(MessagesService messagesService, TopicsService topicsService, UUIDValidator uuidValidator, MessageDTOValidator messageDTOValidator) {
+    public MessageController(MessagesService messagesService, TopicsService topicsService, UUIDValidator uuidValidator, MessageDTOValidator messageDTOValidator, MessagePaginator messagePaginator) {
         this.messagesService = messagesService;
             this.topicsService = topicsService;
             this.uuidValidator = uuidValidator;
             this.messageDTOValidator = messageDTOValidator;
+            this.messagePaginator = messagePaginator;
         }
 
     @PostMapping
@@ -42,6 +44,19 @@ public class MessageController {
         }
         messagesService.save(messageDTO, UUID.fromString(topicId));
         return ResponseEntity.ok(topicsService.findById(UUID.fromString(topicId)).orElse(null));
+    }
+    @PostMapping(params = { "page", "message_per_page"})
+    public ResponseEntity<Topic> createMessage(@PathVariable String topicId, @RequestBody @Valid MessageDTO messageDTO,
+                                               BindingResult bindingResult,
+                                               @RequestParam(name = "page") int page,
+                                               @RequestParam(name = "message_per_page") int size){
+        messageDTOValidator.validate(topicId, messageDTO);
+        if (bindingResult.hasErrors()){
+            ErrorsOut.returnErrors(bindingResult);
+        }
+        messagesService.save(messageDTO, UUID.fromString(topicId));
+        return ResponseEntity.ok(messagePaginator.paginate(topicsService.findById(UUID.fromString(topicId))
+                        .orElse(null), page, size));
     }
 
     @PutMapping
@@ -65,6 +80,31 @@ public class MessageController {
 
         return ResponseEntity.ok(topicsService.findById(UUID.fromString(topicId)).orElse(null));
     }
+    @PutMapping(params = { "page", "message_per_page"})
+    public ResponseEntity<Topic> updateMessage(@PathVariable String topicId, @RequestBody @Valid MessageDTO messageDTO,
+                                               BindingResult bindingResult,
+                                               @RequestParam(name = "page") int page,
+                                               @RequestParam(name = "message_per_page") int size){
+        if(uuidValidator.checkingForIncorrectUUID(topicId)){
+            throw new InvalidTopicIdException("Invalid topic ID");
+        }
+        if(topicsService.findById(UUID.fromString(topicId)).isEmpty()){
+            throw new TopicNotFoundException("Topic not found");
+        }
+
+        if(bindingResult.hasErrors()){
+            ErrorsOut.returnErrors(bindingResult);
+        }
+        Message message = messagesService.findById(messageDTO.getId())
+                .orElseThrow(() -> new MessageNotFoundException("Message not found"));
+        message.setText(messageDTO.getText());
+
+        messagesService.save(message);
+
+        return ResponseEntity.ok(messagePaginator.paginate(topicsService.findById(UUID.fromString(topicId))
+                .orElse(null), page, size));
+    }
+
 
     @DeleteMapping
     public ResponseEntity<HttpStatusCode> deleteMessage(@PathVariable String messageId){
@@ -97,5 +137,9 @@ public class MessageController {
     @ExceptionHandler
     private ResponseEntity<String> handleException (MessageNotFoundException e){
         return new ResponseEntity<>(e.getMessage(), HttpStatusCode.valueOf(404));
+    }
+    @ExceptionHandler
+    private ResponseEntity<String> handleException (InvalidPaginationException e){
+        return new ResponseEntity<>(e.getMessage(), HttpStatusCode.valueOf(400));
     }
 }

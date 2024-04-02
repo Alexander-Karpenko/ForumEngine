@@ -12,7 +12,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
@@ -30,19 +29,21 @@ public class TopicController {
     private final UUIDValidator uuidValidator;
     private final MessagesService messagesService;
     private final NewTopicDTOMessageValidator newTopicDTOMessageValidator;
+    private final MessagePaginator messagePaginator;
 
     @Autowired
-    public TopicController(TopicsService topicsService, ModelMapper modelMapper, UUIDValidator uuidValidator, MessagesService messagesService, NewTopicDTOMessageValidator newTopicDTOMessageValidator) {
+    public TopicController(TopicsService topicsService, ModelMapper modelMapper, UUIDValidator uuidValidator, MessagesService messagesService, NewTopicDTOMessageValidator newTopicDTOMessageValidator, MessagePaginator messagePaginator) {
         this.topicsService = topicsService;
         this.modelMapper = modelMapper;
         this.uuidValidator = uuidValidator;
         this.messagesService = messagesService;
         this.newTopicDTOMessageValidator = newTopicDTOMessageValidator;
+        this.messagePaginator = messagePaginator;
     }
 
     @PostMapping
-    public ResponseEntity<String> createTopic(@RequestBody @Valid NewTopicDTO newTopicDTO,
-                                                  BindingResult bindingResult){
+    public ResponseEntity<Topic> createTopic(@RequestBody @Valid NewTopicDTO newTopicDTO,
+                                             BindingResult bindingResult){
         if (bindingResult.hasErrors()){
             ErrorsOut.returnErrors(bindingResult);
         }
@@ -58,12 +59,14 @@ public class TopicController {
         //  сообщения тема не создается, а сообщению нельзя сразу задать id темы, тк темы нет в бд.
         //  Я уверен, что есть решение получше, тк я лишний раз нагружаю бд, но я его еще не нашел
 
-        return new ResponseEntity<>("Successful operation", HttpStatusCode.valueOf(200));
+        Topic topic = topicsService.findById(topicUuid).orElse(null);
+        return ResponseEntity.ok(topic);
     }
 
+
     @PutMapping
-    public ResponseEntity<Topic> updateTopic(@RequestBody @Valid TopicDTO topicDTO,
-                                             BindingResult bindingResult){
+    public ResponseEntity<List<Topic>> updateTopic(@RequestBody @Valid TopicDTO topicDTO,
+                                                   BindingResult bindingResult){
         if(bindingResult.hasErrors()){
             ErrorsOut.returnErrors(bindingResult);
         }
@@ -71,12 +74,35 @@ public class TopicController {
                 .orElseThrow(() -> new TopicNotFoundException("Topic not found"));
         topic.setName(topicDTO.getName());
         topicsService.save(topic);
-        return ResponseEntity.ok(topic);
+        return ResponseEntity.ok(topicsService.findAll());
     }
+
+    @PutMapping(params = { "page", "topic_per_page" })
+    public ResponseEntity<List<Topic>> updateTopic(@RequestBody @Valid TopicDTO topicDTO,
+                                                   BindingResult bindingResult, @RequestParam(name = "page") int page,
+                                                   @RequestParam(name = "topic_per_page") int size){
+        if(bindingResult.hasErrors()){
+            ErrorsOut.returnErrors(bindingResult);
+        }
+        Topic topic = topicsService.findById(topicDTO.getId())
+                .orElseThrow(() -> new TopicNotFoundException("Topic not found"));
+        topic.setName(topicDTO.getName());
+        topicsService.save(topic);
+
+        return ResponseEntity.ok(topicsService.findAll(page,size));
+    }
+
 
     @GetMapping
     public ResponseEntity<List<TopicDTO>> listAllTopics(){
         return ResponseEntity.ok(topicsService.findAll().stream().map(this::convertToTopicDTO)
+                .collect(Collectors.toList()));
+    }
+
+    @GetMapping(params = { "page", "topic_per_page" })
+    public ResponseEntity<List<TopicDTO>> listAllTopics(@RequestParam(name = "page") int page,
+                                                        @RequestParam(name = "topic_per_page") int size){
+        return ResponseEntity.ok(topicsService.findAll(page,size).stream().map(this::convertToTopicDTO)
                 .collect(Collectors.toList()));
     }
 
@@ -88,6 +114,18 @@ public class TopicController {
         }
         Optional<Topic> topic = topicsService.findById(UUID.fromString(topicId));
         return ResponseEntity.ok(topic);
+    }
+    @RequestMapping(path = "/{topicId}",params = { "page", "message_per_page"})
+    @GetMapping
+    public ResponseEntity<Topic> listTopicMessages(@PathVariable String topicId,
+                                                             @RequestParam(name = "page") int page,
+                                                             @RequestParam(name = "message_per_page") int size) {
+        if(uuidValidator.checkingForIncorrectUUID(topicId)){
+            throw new InvalidTopicIdException("Invalid topic ID");
+        }
+        Optional<Topic> topic = topicsService.findById(UUID.fromString(topicId));
+        assert topic.orElse(null) != null;
+        return ResponseEntity.ok(messagePaginator.paginate(topic.orElse(null), page, size));
     }
 
 
@@ -118,6 +156,10 @@ public class TopicController {
     }
     @ExceptionHandler
     private ResponseEntity<String> handleException (InvalidTopicIdException e){
+        return new ResponseEntity<>(e.getMessage(), HttpStatusCode.valueOf(400));
+    }
+    @ExceptionHandler
+    private ResponseEntity<String> handleException (InvalidPaginationException e){
         return new ResponseEntity<>(e.getMessage(), HttpStatusCode.valueOf(400));
     }
 
