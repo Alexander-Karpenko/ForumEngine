@@ -2,11 +2,12 @@ package com.AtomIDTest.ForumEngine.DTO;
 
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import lombok.Data;
 import org.hibernate.annotations.UuidGenerator;
 
 import java.util.Date;
 import java.util.UUID;
-
+@Data
 public class TopicDTO {
 
     @NotNull(message = "Topic id shouldn't be empty")
@@ -15,27 +16,4 @@ public class TopicDTO {
     @NotEmpty(message = "Topic name shouldn't be empty")
     private String name;
 
-    public UUID getId() {
-        return id;
-    }
-
-    public void setId(UUID id) {
-        this.id = id;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    @Override
-    public String toString() {
-        return "TopicDTO{" +
-                "id=" + id +
-                ", name='" + name + '\'' +
-                '}';
-    }
 }

@@ -11,9 +11,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Objects;
 import java.util.UUID;
 
 @RestController
@@ -46,7 +50,7 @@ public class MessageController {
         return ResponseEntity.ok(topicsService.findById(UUID.fromString(topicId)).orElse(null));
     }
     @PostMapping(params = { "page", "message_per_page"})
-    public ResponseEntity<Topic> createMessage(@PathVariable String topicId, @RequestBody @Valid MessageDTO messageDTO,
+    public ResponseEntity<Topic> createMessageWithPagination(@PathVariable String topicId, @RequestBody @Valid MessageDTO messageDTO,
                                                BindingResult bindingResult,
                                                @RequestParam(name = "page") int page,
                                                @RequestParam(name = "message_per_page") int size){
@@ -55,8 +59,8 @@ public class MessageController {
             ErrorsOut.returnErrors(bindingResult);
         }
         messagesService.save(messageDTO, UUID.fromString(topicId));
-        return ResponseEntity.ok(messagePaginator.paginate(topicsService.findById(UUID.fromString(topicId))
-                        .orElse(null), page, size));
+        return ResponseEntity.ok(messagePaginator.paginate(Objects.requireNonNull(topicsService.findById(UUID.fromString(topicId))
+                .orElse(null)), page, size));
     }
 
     @PutMapping
@@ -74,6 +78,13 @@ public class MessageController {
         }
         Message message = messagesService.findById(messageDTO.getId())
                 .orElseThrow(() -> new MessageNotFoundException("Message not found"));
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        UserDetails userDetails = (UserDetails) SecurityContextHolder.getContext().getAuthentication()
+                .getPrincipal();
+        if(!message.getAuthor().equals(userDetails.getUsername()) && auth != null &&
+                auth.getAuthorities().stream().noneMatch(a -> a.getAuthority().equals("ROLE_ADMIN"))){
+            throw new AccessDeniedException("You cannot edit a message not created by you. ");
+        }
         message.setText(messageDTO.getText());
 
         messagesService.save(message);
@@ -81,7 +92,7 @@ public class MessageController {
         return ResponseEntity.ok(topicsService.findById(UUID.fromString(topicId)).orElse(null));
     }
     @PutMapping(params = { "page", "message_per_page"})
-    public ResponseEntity<Topic> updateMessage(@PathVariable String topicId, @RequestBody @Valid MessageDTO messageDTO,
+    public ResponseEntity<Topic> updateMessageWithPagination(@PathVariable String topicId, @RequestBody @Valid MessageDTO messageDTO,
                                                BindingResult bindingResult,
                                                @RequestParam(name = "page") int page,
                                                @RequestParam(name = "message_per_page") int size){
@@ -97,19 +108,39 @@ public class MessageController {
         }
         Message message = messagesService.findById(messageDTO.getId())
                 .orElseThrow(() -> new MessageNotFoundException("Message not found"));
-        message.setText(messageDTO.getText());
 
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        UserDetails userDetails = (UserDetails) SecurityContextHolder.getContext().getAuthentication()
+                .getPrincipal();
+        if(!message.getAuthor().equals(userDetails.getUsername()) && auth != null &&
+                auth.getAuthorities().stream().noneMatch(a -> a.getAuthority().equals("ROLE_ADMIN"))){
+            throw new AccessDeniedException("You cannot edit a message not created by you. ");
+        }
+
+        message.setText(messageDTO.getText());
         messagesService.save(message);
 
-        return ResponseEntity.ok(messagePaginator.paginate(topicsService.findById(UUID.fromString(topicId))
-                .orElse(null), page, size));
+        return ResponseEntity.ok(messagePaginator.paginate(Objects.requireNonNull(topicsService.findById(UUID.fromString(topicId))
+                .orElse(null)), page, size));
     }
 
 
     @DeleteMapping
     public ResponseEntity<HttpStatusCode> deleteMessage(@PathVariable String messageId){
+        if(uuidValidator.checkingForIncorrectUUID(messageId)){
+            throw new InvalidTopicIdException("Invalid message ID");
+        }
+        Message message = messagesService.findById(UUID.fromString(messageId))
+                .orElseThrow(() -> new MessageNotFoundException("Message not found"));
+        UserDetails userDetails = (UserDetails) SecurityContextHolder.getContext().getAuthentication()
+                .getPrincipal();
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if(!message.getAuthor().equals(userDetails.getUsername()) && auth != null &&
+                auth.getAuthorities().stream().noneMatch(a -> a.getAuthority().equals("ROLE_ADMIN"))){
+            throw new AccessDeniedException("You cannot delete a message not created by you. ");
+        }
             messagesService.delete(UUID.fromString(messageId));
-        return ResponseEntity.ok(HttpStatusCode.valueOf(204));
+        return new ResponseEntity<>(HttpStatusCode.valueOf(204));
     }
 
 

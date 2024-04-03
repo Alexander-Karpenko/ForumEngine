@@ -5,6 +5,8 @@ import com.AtomIDTest.ForumEngine.models.Message;
 import com.AtomIDTest.ForumEngine.repositories.MessagesRepository;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -51,7 +53,9 @@ public class MessagesService {
         return message;
     }
     private void enrichMessage(Message message, UUID topicId){
-        //TODO message.setAuthor(взять с JWT)
+        UserDetails userDetails = (UserDetails) SecurityContextHolder.getContext().getAuthentication()
+                .getPrincipal();
+        message.setAuthor(userDetails.getUsername());
         message.setCreated(LocalDateTime.now());
         message.setTopic(topicsService.findById(topicId).orElse(null));
     }
